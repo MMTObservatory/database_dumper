@@ -1,0 +1,7 @@
+tornado
+aiomysql
+numpy
+pandas
+jupyter
+jupyterlab
+matplotlib
