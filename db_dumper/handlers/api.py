@@ -9,7 +9,7 @@ import datetime
 
 from ..db import db_conn
 from ..appconfig import AppConfig
-config=AppConfig()
+config = AppConfig()
 
 
 
@@ -55,6 +55,12 @@ class JsonHandler(RequestHandler):
         except Exception as err:
             resp["errors"].append(str(err))
             nsamples = 100000
+
+        try:
+            fit_order = int(params["fit_order"])
+        except Exception as err:
+            resp["errors"].append(str(err))
+            fit_order = 100000
 
         dataframes = {}
         for ds_name in good:
