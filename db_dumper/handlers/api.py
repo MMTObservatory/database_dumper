@@ -7,8 +7,9 @@ import asyncio
 import pandas as pd
 import datetime
 
-from ..db import db_conn
+from ..db import db_conn, dumper_job, job_interface
 from ..appconfig import AppConfig
+from pathlib import Path
 config = AppConfig()
 
 
@@ -23,12 +24,69 @@ class JsonHandler(RequestHandler):
     """
 
     conn = db_conn()
+    jiface = job_interface()
 
-    async def get(self):
-        params = json.loads(self.request.body.decode())
+    # async def get(self):
+    #     try:
+    #         params = json.loads(self.request.body.decode())
+    #     except Exception as error:
+    #         self.write(str(error))
+    #         return
+    #     info = await self.conn.info()
+    #     good = []
+    #     resp = {"errors": [], "info":[]}
+    #
+    #     for name in params["ds_names"]:
+    #         if any(info.ds_name == name):
+    #             good.append(name)
+    #         else:
+    #             resp["errors"].append(f"Bad ds_name {name}")
+    #
+    #     try:
+    #         delta_time = datetime.timedelta(seconds=int(params["delta_time"]))
+    #     except Exception as err:
+    #         resp["errors"].append(str(err))
+    #         # default to 1 hour
+    #         delta_time = datetime.timedelta(seconds=3600)
+    #
+    #     now = datetime.datetime.utcnow()
+    #     timestamp = int((now - delta_time).timestamp() * 1000)  # unix timestamp in milliseconds
+    #
+    #     if len(good) == 0:
+    #         self.write(json.dumps(resp))
+    #         return
+    #
+    #     try:
+    #         nsamples = int(params["nsamples"])
+    #     except Exception as err:
+    #         resp["errors"].append(str(err))
+    #         nsamples = 100000
+    #
+    #     try:
+    #         fit_order = int(params["fit_order"])
+    #     except Exception as err:
+    #         resp["errors"].append(str(err))
+    #         fit_order = 3
+    #
+    #     job = dumper_job(good, delta_time, nsamples, fit_order)
+    #     self.jiface.submit_job(job)
+    #     self.write(self.jiface.state)
+
+
+    async def post(self):
+
+        resp = {"errors": [], "info": [], "success":False}
+        jobid = self.get_secure_cookie("job")
+
+        try:
+            params = json.loads(self.request.body.decode())
+        except Exception as error:
+            self.write(resp["errors"].append(str(error)))
+            return
+
         info = await self.conn.info()
         good = []
-        resp = {"errors": [], "info":[]}
+
 
         for name in params["ds_names"]:
             if any(info.ds_name == name):
@@ -60,40 +118,55 @@ class JsonHandler(RequestHandler):
             fit_order = int(params["fit_order"])
         except Exception as err:
             resp["errors"].append(str(err))
-            fit_order = 100000
+            fit_order = 3
 
-        dataframes = {}
-        for ds_name in good:
-            df = await self.conn.recent_select(("value", "timestamp"), ds_name, delta_time)
+        job = dumper_job(good, delta_time, nsamples, fit_order)
+        self.jiface.submit_job(job)
+        resp["info"] = self.jiface.state
+        resp["success"] = True
+        self.set_cookie("job", job.jobid)
+        self.write(resp)
 
-            if len(df) == int(config["DEFAULT"]["resp_limit"]):
-                # Too much data, let's not block for all of this.
-                loop = asyncio.get_event_loop()
-                fname = f"{ds_name}_{now.strftime('%m%d%H%M')}.csv"
-                task = loop.create_task(self.conn.long_select(
-                    ("value", "timestamp"),
-                    ds_name,
-                    delta_time,
-                    fname=fname)
-                )
+class TestHandler(RequestHandler):
 
-                #handle = loop.call_soon(task)
-                resp['info'].append(f"Over record limit, sending to {fname} soon.")
+    def get(self, *args):
 
-            df.index = pd.to_datetime(df.timestamp * 1000000)
-            del df['timestamp']
-            # period = delta_time.total_seconds()/nsamples
-            # df = df.resample(datetime.timedelta(seconds=period)).mean().fillna(method='bfill')
+        self.write(f"This is a test {args[0]} {args[1]}")
 
-            dataframes[ds_name] = df
+class JobHandler(RequestHandler):
+
+    jiface = job_interface()
+
+    def get(self, do_what):
+        # self.render(
+        #     r'C:\Users\srswi\git-clones\db_dumper\db_dumper\templates\jobs.html',
+        #     job=self.jiface[uuid]['job'])
+        jobid = self.get_argument("jobid")
+
+        self.render(r'C:\Users\srswi\git-clones\db_dumper\db_dumper\templates\jobs.html')
 
 
-        merged = pd.concat(dataframes, axis=1)
-        #merged.interpolate()
-        resp["data"] = json.loads(merged.to_json())
-        resp["timestamp"] = timestamp
-        resp["delta_time"] = delta_time.total_seconds()
-        self.write(json.dumps(resp))
+class JobInfoHandler(RequestHandler):
+
+    jiface = job_interface()
+
+    def get(self, do_what):
+        # self.render(
+        #     r'C:\Users\srswi\git-clones\db_dumper\db_dumper\templates\jobs.html',
+        #     job=self.jiface[uuid]['job'])
+
+        self.write(self.jiface[jobid].state)
+
+class JobListHandler(RequestHandler):
+
+    jiface = job_interface()
+
+    def get(self, do_what):
+        self.render(
+            r'C:\Users\srswi\git-clones\db_dumper\db_dumper\templates\joblist.html',
+            self.jiface()
+
+        )
 
 
 class GetHandler(RequestHandler):
@@ -114,6 +187,24 @@ class InfoHandler(RequestHandler):
 
         else:
             self.write(df.to_json())
+
+class System2LogHandler(RequestHandler):
+    conn = db_conn()
+
+    async def get(self):
+        try:
+            df = await self.conn.info()
+        except Exception as error:
+            self.write({"error": "Could not connect to database"})
+            return
+        systems = set(df['subsystem'])
+        output = {}
+        for sys in systems:
+            output[sys] = list(df[df['subsystem']==sys]['ds_name'])
+            #output[sys]= sys
+
+        self.write(output)
+
 
 
 def make_app():

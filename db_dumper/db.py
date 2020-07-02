@@ -8,7 +8,6 @@ from uuid import uuid1
 import asyncio
 import numpy as np
 
-
 global_limit = int(AppConfig()["DEFAULT"]["resp_limit"])
 
 
@@ -40,7 +39,6 @@ class db_conn:
                 sqlstr += f" where {where}"
 
             sqlstr += f" limit {global_limit}"
-            print(sqlstr)
             resp = await self.query(sqlstr)
 
             df = pd.DataFrame.from_records(resp, columns=columns)
@@ -77,20 +75,12 @@ class db_conn:
 
             return df
 
-        async def long_select(self, table, jobid, fname, start, stop):
+        async def long_select(self, table, start, stop):
             """This function is meant to be called when the number of
             records that will be retrieved by a select is greater than
             some upper limit. In this case we call the select in a
             loop and write the responses to a file allowing other
             coroutines to advance during the IO blocking."""
-
-            # now = datetime.datetime.utcnow()
-            #
-            # if fname is None:
-            #     fname = f"{table}_{now.strftime('%m%d%H%M')}.csv"
-            #
-            # fpath = Path(self.config["DEFAULT"]["bigfile_tmp_path"]) / jobid
-            # fpath.mkdir(parents=True, exist_ok=True)
 
             where = f"timestamp > {int(start.timestamp() * 1000)}\
              and timestamp < {int(stop.timestamp() * 1000)}"
@@ -108,26 +98,8 @@ class db_conn:
                 n_resp = len(records)
                 yield records
 
-
-
-
-                # print(f"Writing {len(df)} records to {fname}")
-                # if is_first:
-                #     # Right the header the first
-                #     # iteration but not subsequent iterations
-                #     header = True
-                #     is_first = False
-                # else:
-                #     header = False
-                #
-                # df.to_csv(fpath / fname, mode='a', header=header)
-                #
-                # del df
-
-
-
         async def query(self, sql: str, return_type: str = "records"):
-            logging.debug(f'config is {dict(self.config["DEFAULT"])}')
+
             conn = await \
                 aiomysql.connect(
                     host=self.config["DEFAULT"]['mysql_host'],
@@ -158,9 +130,10 @@ class db_conn:
 
 
 class dumper_job:
+
     conn = db_conn()
 
-    def __init__(self, ds_names: list, recency: int, nsamples: int=1000):
+    def __init__(self, ds_names: list, recency: int, nsamples: int = 1000, fit_order: int=3):
         if not isinstance(recency, datetime.timedelta):
             recency = datetime.timedelta(seconds=recency)
         self.config = AppConfig()
@@ -171,26 +144,54 @@ class dumper_job:
         self.chunksize = 100000
         self.jobid = str(uuid1())
         self.nsamples = nsamples
+        self.fit_order = fit_order
 
-        self.metadata = {"job_start_utc": datetime.datetime.utcnow()}
+        self.metadata = {"job_start_utc": datetime.datetime.utcnow(), 'tables': {}}
+
+        for table in self.ds_names:
+            self.metadata['tables'][table] = {}
+            self.metadata['tables'][table]['tmpfile'] = None
+            self.metadata['tables'][table]['rows_written'] = 0
 
     async def run(self):
-
+        """Retrieve raw data from the database, downsample data into evenly
+        spaced datapoints and merge the data into one csv_file"""
         tasks = []
-
+        fpath = Path(self.config["DEFAULT"]["bigfile_path"]) / self.jobid
+        fpath.mkdir(exist_ok=True, parents=True)
+        fname = "processed.csv"
         # Set up the sql select queries
         for table in self.ds_names:
-            select_iter = self.conn.long_select(table, self.jobid, None, self.start, self.stop)
+            select_iter = self.conn.long_select(table, self.start, self.stop)
             task = self.collect_and_write(table, select_iter)
-            self.metadata[table] = {"written": False}
+            self.metadata['tables'][table]['finished'] = True
             tasks.append(task)
 
         # Get the raw data
         results = await asyncio.gather(*tasks)
 
         # downsample the data
-        return [self.down_sample(result) for result in results]
+        dfs = [self.down_sample(result, table) for result, table in zip(results, self.ds_names)]
+        final_df = pd.concat(dfs, join='outer', axis=1)
+        final_df.columns = self.ds_names
 
+        self.metadata["processed_rows"] = len(final_df)
+        self.metadata['processed_stats'] = final_df.describe()
+        final_df.to_csv(fpath / fname)
+        self.metadata["processed_file"] = fpath / fname
+        self.metadata["processed_file_stats"] = (fpath / fname).stat()
+        del final_df
+
+    @property
+    def final_df(self):
+        if "processed_file" not in self.metadata:
+            raise RuntimeError("Cannot access final product. Data is still being processed.")
+
+        if not hasattr(self, '_final_df'):
+            resp = pd.read_csv(self.metadata['processed_file'])
+            self._final_df = resp
+
+        return self._final_df
 
     async def collect_and_write(self, table, select_iter):
 
@@ -199,28 +200,43 @@ class dumper_job:
         now = datetime.datetime.utcnow()
         fname = f"{table}_{now.strftime('%m%d%H%M')}.csv"
 
-        self.metadata[table]["tmpfile"] = str(fpath/fname)
+        self.metadata['tables'][table]["tmpfile"] = str(fpath / fname)
 
         is_first = True
+
         async for records in select_iter:
 
             dataframe = pd.DataFrame.from_records(
                 records,
                 columns=("timestamp", "value"),
                 index="timestamp")
-
+            self.metadata['tables'][table]['rows_written'] += len(dataframe)
             dataframe.to_csv(fpath / fname, header=is_first, mode='a')
             if is_first:  # only write header on first iteration
                 is_first = False
 
         del dataframe
-        self.metadata[table]["written"] = True
-        return fpath/fname
+
+        self.metadata['tables'][table]['finished'] = True
+        return fpath / fname
 
     def __repr__(self):
 
         return str(self.state)
 
+    def __str__(self):
+        return str(self.state)
+
+
+
+    def __getitem__(self, item):
+        return self.metadata[item]
+
+    def __getattr__(self, attr):
+        return self.metadata[attr]
+    @property
+    def json(self):
+        return json.dumps(self.state, indent=4, default=str)
 
     @property
     def state(self):
@@ -228,6 +244,7 @@ class dumper_job:
         resp["t0_utc"] = self.start
         resp["tf_utc"] = self.stop
         resp["tspan_hours"] = (self.stop - self.start).total_seconds() / 3600
+        resp['fit_order'] = self.fit_order
 
         return resp
 
@@ -235,23 +252,66 @@ class dumper_job:
     def sample_times(self):
         return pd.date_range(self.start, self.stop, periods=self.nsamples)
 
-    def down_sample(self, csv_file):
+    @property
+    def tables(self):
+        return self.metadata['tables']
+
+    def down_sample(self, csv_file, table):
+        """Read csv_file in chunks using an evenly spaced sample time
+        to downsample"""
         chunks = pd.read_csv(csv_file, chunksize=10000)
         sample_times = self.sample_times
         out_df = pd.DataFrame()
 
         for ii, df in enumerate(chunks):
-            print(ii)
-            #yield df
             df.index = pd.to_datetime(df.timestamp * 1000000)  # Pandas dt is in nanoseconds
             del df["timestamp"]
             subsample = sample_times[sample_times < df.index.max()]
             subsample = subsample[subsample > df.index.min()]
             with_sample_times = pd.concat([df, pd.DataFrame([np.nan] * len(subsample), index=subsample)])
-            newdf = with_sample_times.value.interpolate()[subsample]
+            newdf = with_sample_times.value.interpolate(method='polynomial', order=self.fit_order)[subsample]
 
             out_df = pd.concat([out_df, newdf])
-            print(f"{ii}th iteration frame length = {len(out_df)}")
-            #yield {"out_df": out_df, "newdf": newdf, "sample_times": sample_times, "subsample": subsample}
+
 
         return out_df
+
+
+
+class job_interface:
+    config = AppConfig()
+    class _job_interface:
+        def __init__(self):
+            self._jobs = {}
+
+        def submit_job(self, job):
+            task = asyncio.create_task(job.run())
+            self._jobs[job.jobid] = {"task": task, "job": job}
+
+
+        def keys(self):
+            return self._jobs.keys()
+
+        def __getitem__(self, uuid):
+           return self._jobs[uuid]
+
+        def items(self):
+            for key, value in self._jobs.items():
+                yield key, value
+            for data in Path(self.config["DEFAULT"]["bigfile_path"]).iterdir():
+
+                yield
+
+
+
+
+
+
+    instance = None
+
+    def __new__(cls):
+
+        if cls.instance is None:
+            cls.instance = cls._job_interface()
+
+        return cls.instance
