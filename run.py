@@ -10,9 +10,15 @@ import tornado.web
 import tornado.autoreload
 from tornado.options import options
 import tornado.web
+import os
+from db_dumper.appconfig import AppConfig 
 
-from db_dumper.appconfig import AppConfig
-config = AppConfig("config.ini")
+if "DB_DUMPER_CONFIG" in os.environ:
+    configpath = os.environ["DB_DUMPER_CONFIG"]
+else:
+    configpath = "config.ini"
+
+config = AppConfig(configpath)
 
 from settings import settings
 from db_dumper.urls import url_patterns
@@ -27,7 +33,7 @@ class TornadoApplication(tornado.web.Application):
 
 
 def main():
-    config = AppConfig("config.ini")
+
     app = TornadoApplication()
     app.listen(config["DEFAULT"]["app_port"])
     logging.debug(dict(config["DEFAULT"]))
