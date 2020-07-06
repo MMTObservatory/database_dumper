@@ -1,0 +1,7 @@
+version: '3.7'
+services:
+  db_dumper:
+    build: .
+    command: python /app/run.py
+    ports:
+      - "8000:8000"
