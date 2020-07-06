@@ -9,9 +9,10 @@ import datetime
 
 from ..db import db_conn, dumper_job, job_interface
 from ..appconfig import AppConfig
+from dateutil import parser
 from pathlib import Path
 config = AppConfig()
-
+from collections import OrderedDict
 
 
 class JsonHandler(RequestHandler):
@@ -26,57 +27,11 @@ class JsonHandler(RequestHandler):
     conn = db_conn()
     jiface = job_interface()
 
-    # async def get(self):
-    #     try:
-    #         params = json.loads(self.request.body.decode())
-    #     except Exception as error:
-    #         self.write(str(error))
-    #         return
-    #     info = await self.conn.info()
-    #     good = []
-    #     resp = {"errors": [], "info":[]}
-    #
-    #     for name in params["ds_names"]:
-    #         if any(info.ds_name == name):
-    #             good.append(name)
-    #         else:
-    #             resp["errors"].append(f"Bad ds_name {name}")
-    #
-    #     try:
-    #         delta_time = datetime.timedelta(seconds=int(params["delta_time"]))
-    #     except Exception as err:
-    #         resp["errors"].append(str(err))
-    #         # default to 1 hour
-    #         delta_time = datetime.timedelta(seconds=3600)
-    #
-    #     now = datetime.datetime.utcnow()
-    #     timestamp = int((now - delta_time).timestamp() * 1000)  # unix timestamp in milliseconds
-    #
-    #     if len(good) == 0:
-    #         self.write(json.dumps(resp))
-    #         return
-    #
-    #     try:
-    #         nsamples = int(params["nsamples"])
-    #     except Exception as err:
-    #         resp["errors"].append(str(err))
-    #         nsamples = 100000
-    #
-    #     try:
-    #         fit_order = int(params["fit_order"])
-    #     except Exception as err:
-    #         resp["errors"].append(str(err))
-    #         fit_order = 3
-    #
-    #     job = dumper_job(good, delta_time, nsamples, fit_order)
-    #     self.jiface.submit_job(job)
-    #     self.write(self.jiface.state)
-
 
     async def post(self):
 
         resp = {"errors": [], "info": [], "success":False}
-        jobid = self.get_secure_cookie("job")
+
 
         try:
             params = json.loads(self.request.body.decode())
@@ -95,14 +50,16 @@ class JsonHandler(RequestHandler):
                 resp["errors"].append(f"Bad ds_name {name}")
 
         try:
-            delta_time = datetime.timedelta(seconds=int(params["delta_time"]))
+            start = parser.parse(params["startdate"])
         except Exception as err:
             resp["errors"].append(str(err))
-            # default to 1 hour
-            delta_time = datetime.timedelta(seconds=3600)
+            start=None
 
-        now = datetime.datetime.utcnow()
-        timestamp = int((now - delta_time).timestamp() * 1000)  # unix timestamp in milliseconds
+        try:
+            stop = parser.parse(params["enddate"])
+        except Exception as err:
+            resp["errors"].append(str(err))
+            stop = None
 
         if len(good) == 0:
             self.write(json.dumps(resp))
@@ -118,14 +75,16 @@ class JsonHandler(RequestHandler):
             fit_order = int(params["fit_order"])
         except Exception as err:
             resp["errors"].append(str(err))
-            fit_order = 3
+            fit_order = 5
 
-        job = dumper_job(good, delta_time, nsamples, fit_order)
+        job = dumper_job(good, nsamples, fit_order, start, stop)
+        job = dumper_job(good, nsamples, fit_order, start, stop)
         self.jiface.submit_job(job)
-        resp["info"] = self.jiface.state
+        resp["info"] = job.state
         resp["success"] = True
-        self.set_cookie("job", job.jobid)
-        self.write(resp)
+
+        self.write(json.dumps(resp, default=str))
+        self.set_header("Content-Type", "application/json")
 
 class TestHandler(RequestHandler):
 
@@ -137,36 +96,41 @@ class JobHandler(RequestHandler):
 
     jiface = job_interface()
 
-    def get(self, do_what):
-        # self.render(
-        #     r'C:\Users\srswi\git-clones\db_dumper\db_dumper\templates\jobs.html',
-        #     job=self.jiface[uuid]['job'])
-        jobid = self.get_argument("jobid")
+    def get(self):
 
-        self.render(r'C:\Users\srswi\git-clones\db_dumper\db_dumper\templates\jobs.html')
+        uuid = self.get_argument('jobid')
+        job = self.jiface[uuid]
+        jsondata = json.dumps(job.state, default=str)
+        self.write(jsondata)
+        self.set_header("Content-Type", "application/json")
+
 
 
 class JobInfoHandler(RequestHandler):
 
     jiface = job_interface()
 
-    def get(self, do_what):
-        # self.render(
-        #     r'C:\Users\srswi\git-clones\db_dumper\db_dumper\templates\jobs.html',
-        #     job=self.jiface[uuid]['job'])
+    def get(self):
+        jobid = self.get_argument("jobid")
+        self.render(
+            'jobs.html',
+            jobid=jobid, job=self.jiface[jobid].state
+        )
 
-        self.write(self.jiface[jobid].state)
+
 
 class JobListHandler(RequestHandler):
 
     jiface = job_interface()
 
-    def get(self, do_what):
-        self.render(
-            r'C:\Users\srswi\git-clones\db_dumper\db_dumper\templates\joblist.html',
-            self.jiface()
-
-        )
+    def get(self, type):
+        if type == ".json":
+            self.write({'ids':list(self.jiface.iterids())})
+        else:
+            self.render(
+                'joblist.html',
+                jobs=self.jiface
+            )
 
 
 class GetHandler(RequestHandler):
@@ -198,10 +162,10 @@ class System2LogHandler(RequestHandler):
             self.write({"error": "Could not connect to database"})
             return
         systems = set(df['subsystem'])
-        output = {}
+        output = OrderedDict()
+
         for sys in systems:
             output[sys] = list(df[df['subsystem']==sys]['ds_name'])
-            #output[sys]= sys
 
         self.write(output)
 

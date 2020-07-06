@@ -32,7 +32,9 @@ def main():
     app.listen(config["DEFAULT"]["app_port"])
     logging.debug(dict(config["DEFAULT"]))
     logging.debug(f"port is {config['DEFAULT']['app_port']}")
-    tornado.ioloop.IOLoop.current().start()
+    loop = tornado.ioloop.IOLoop.current()
+
+    loop.start()
 
 
 if __name__ == "__main__":

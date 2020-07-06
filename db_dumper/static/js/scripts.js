@@ -95,7 +95,32 @@ function onSubmit(dt)
         if(value != null)
             loglist[ii-1] = value;
     }
-    output = {ds_names: loglist, nsamples: nsamples}
+
+    if(!start)
+    {
+        trigger_modal("Submit Error", "Please enter a start date")
+        return
+    }
+
+    if(!end)
+    {
+        trigger_modal("Submit Error", "Please enter an end date")
+        return
+    }
+
+    if(loglist.length == 0)
+    {
+        trigger_modal("Submit Error", "Please select at least one log")
+        return
+    }
+
+    output = {
+        ds_names: loglist,
+        nsamples: nsamples,
+        startdate: start,
+        enddate: end
+    }
+
     $.ajax
     (
     {
@@ -107,6 +132,7 @@ function onSubmit(dt)
         {
             console.log("submision success")
             console.log(dt)
+            window.location.href = "/job/data.html?jobid="+dt['info']['jobid']
         },
     }
 

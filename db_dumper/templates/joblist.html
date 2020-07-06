@@ -1,0 +1,20 @@
+<html>
+<head>
+  <title>List of Jobs</title>
+</head>
+<body>
+<h1>List of Jobs</h1>
+  <ol>
+{% for jobid, job in jobs.items()%}
+
+    <li>
+      <a href="/job/data.html?jobid={{ jobid }}">
+        {{ job['description'] }} {{ job['t0_utc'] }} - {{ job['tf_utc'] }}
+      </a>
+    </li>
+
+{% end %}
+  <ol>
+</body>
+
+</html>

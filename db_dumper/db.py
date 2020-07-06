@@ -7,7 +7,11 @@ from .appconfig import AppConfig
 from uuid import uuid1
 import asyncio
 import numpy as np
-
+import json
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from scipy import stats
 global_limit = int(AppConfig()["DEFAULT"]["resp_limit"])
 
 
@@ -133,20 +137,33 @@ class dumper_job:
 
     conn = db_conn()
 
-    def __init__(self, ds_names: list, recency: int, nsamples: int = 1000, fit_order: int=3):
-        if not isinstance(recency, datetime.timedelta):
-            recency = datetime.timedelta(seconds=recency)
+    def __init__(self, ds_names: list,
+                 nsamples: int = 1000,
+                 fit_order: int = 3,
+                 startdate = None,
+                 enddate = None):
+        now = datetime.datetime.utcnow()
+        if startdate is None:
+            startdate = now-datetime.timedelta(days=6)
+
+        if enddate is None:
+            enddate = startdate+datetime.timedelta(days=6)
+
+
         self.config = AppConfig()
         self.ds_names = ds_names
-        self.recency = recency
-        self.stop = datetime.datetime.utcnow()
-        self.start = self.stop - recency
+        self.stop = enddate
+        self.start = startdate
         self.chunksize = 100000
         self.jobid = str(uuid1())
         self.nsamples = nsamples
         self.fit_order = fit_order
 
-        self.metadata = {"job_start_utc": datetime.datetime.utcnow(), 'tables': {}}
+        self.metadata = {"job_start_utc": datetime.datetime.utcnow(),
+                         'tables': {},
+                         'finished': False
+
+                         }
 
         for table in self.ds_names:
             self.metadata['tables'][table] = {}
@@ -164,7 +181,7 @@ class dumper_job:
         for table in self.ds_names:
             select_iter = self.conn.long_select(table, self.start, self.stop)
             task = self.collect_and_write(table, select_iter)
-            self.metadata['tables'][table]['finished'] = True
+            self.metadata['tables'][table]['finished'] = False
             tasks.append(task)
 
         # Get the raw data
@@ -178,9 +195,39 @@ class dumper_job:
         self.metadata["processed_rows"] = len(final_df)
         self.metadata['processed_stats'] = final_df.describe()
         final_df.to_csv(fpath / fname)
+
+
+
+
         self.metadata["processed_file"] = fpath / fname
         self.metadata["processed_file_stats"] = (fpath / fname).stat()
+        self.metadata["plot_file"] = (fpath / "plot.png")
+        try:
+
+            plt.ioff()
+            print("attempting to plot")
+            #tmpdf = final_df.dropna()
+
+
+            ax = final_df.dropna().plot()
+            print("we got a plot")
+            fig = ax.get_figure()
+            print("pulled figure")
+            fig.savefig(self.metadata['plot_file'])
+            print("saved")
+
+        except Exception as error:
+            print(f"print We caught the exception {error}")
+
+        self.metadata["finished"] = True
+
+        with (fpath/"meta.json").open('w') as fd:
+            print(self.metadata)
+            json.dump(self.metadata, fd, indent=2, default=str)
+
         del final_df
+
+
 
     @property
     def final_df(self):
@@ -227,6 +274,20 @@ class dumper_job:
     def __str__(self):
         return str(self.state)
 
+    def description(self):
+        outstr = ""
+        for ii, tstring in enumerate(self.ds_names):
+            sep = ' | '
+            if ii == len(self.ds_names)-1:
+                sep = ''
+
+            if len(tstring) > 20:
+                outstr += tstring[:17]+'...'+sep
+            else:
+                outstr += tstring+sep
+
+        return outstr
+
 
 
     def __getitem__(self, item):
@@ -234,6 +295,7 @@ class dumper_job:
 
     def __getattr__(self, attr):
         return self.metadata[attr]
+
     @property
     def json(self):
         return json.dumps(self.state, indent=4, default=str)
@@ -245,6 +307,8 @@ class dumper_job:
         resp["tf_utc"] = self.stop
         resp["tspan_hours"] = (self.stop - self.start).total_seconds() / 3600
         resp['fit_order'] = self.fit_order
+        resp['jobid'] = self.jobid
+        resp['description'] = self.description()
 
         return resp
 
@@ -269,7 +333,8 @@ class dumper_job:
             subsample = sample_times[sample_times < df.index.max()]
             subsample = subsample[subsample > df.index.min()]
             with_sample_times = pd.concat([df, pd.DataFrame([np.nan] * len(subsample), index=subsample)])
-            newdf = with_sample_times.value.interpolate(method='polynomial', order=self.fit_order)[subsample]
+            print(len)
+            newdf = with_sample_times.value.interpolate(method='time', order=self.fit_order)[subsample]
 
             out_df = pd.concat([out_df, newdf])
 
@@ -277,34 +342,84 @@ class dumper_job:
         return out_df
 
 
+class finished_job:
+
+    def __init__(self, metadata):
+
+        self.state = metadata
+
+    def json(self):
+
+        return json.dumps(self.state, indent=2, default=str)
+
 
 class job_interface:
     config = AppConfig()
     class _job_interface:
+        config = AppConfig()
         def __init__(self):
             self._jobs = {}
+            self._tasks = {}
 
         def submit_job(self, job):
             task = asyncio.create_task(job.run())
-            self._jobs[job.jobid] = {"task": task, "job": job}
+            self._jobs[job.jobid] = job
+            self._tasks[job.jobid] = task
 
 
         def keys(self):
             return self._jobs.keys()
 
+        resp = None
         def __getitem__(self, uuid):
-           return self._jobs[uuid]
+            if uuid in self._jobs:
+               resp = self._jobs[uuid]
+            else:
+                for path in Path(self.config["DEFAULT"]["bigfile_path"]).absolute().iterdir():
+                    if str(path.name) == uuid:
+                        with (path / Path("meta.json")).open() as fd:
+                            meta = json.load(fd)
+                            resp = finished_job(meta)
+                        break
+
+            if resp is None:
+                raise KeyError(f"No such jobid {uuid}")
+
+            return resp
+
+
+        def iterids(self):
+            for jobid in self._jobs.keys():
+                yield jobid
+
+            for path in Path(self.config["DEFAULT"]["bigfile_path"]).iterdir():
+                yield str(path.name)
+
 
         def items(self):
-            for key, value in self._jobs.items():
-                yield key, value
+            completed = []
+            for jobid, job in self._jobs.items():
+
+                if not job.metadata['finished']:
+                    yield jobid, job
+                else:
+                    completed.append(jobid)
+
+            for cmpid in completed:
+                # remove finished jobs
+                # This should be done by some sort of
+                # cleaning coroutine.
+                del self._jobs[cmpid]
+
             for data in Path(self.config["DEFAULT"]["bigfile_path"]).iterdir():
+                if (data/"meta.json").exists():
+                    # we should probably do something
+                    # in cases were there is no meta.json
+                    # file
+                    with (data/"meta.json").open() as fd:
+                        meta = json.load(fd)
 
-                yield
-
-
-
-
+                    yield str(data.name), meta
 
 
     instance = None
