@@ -1,18 +1,225 @@
 
 <!doctype html>
-    <head>
-        <meta charset="utf-8">
-        <title>{% block title %}{% end %}</title>
-        <meta name="description" content="">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <link rel="stylesheet" href="css/normalize.min.css">
-        <link rel="stylesheet" href="css/main.css">
-    </head>
-    <body>
-        <!--[if IE]>
-            <p class="browserupgrade">You are using an <strong>outdated</strong> browser. Please <a href="https://browsehappy.com/">upgrade your browser</a> to improve your experience and security.</p>
-        <![endif]-->
-        <p>Hello world! This is HTML5 Boilerplate.</p>
-    </body>
+<html>
+<head> 
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+	<meta name="description" content="" />
+	<meta name="author" content="" />
+
+	<title> MMT Database Dumper</title>
+	<link rel="icon" type="image/x-icon" href="static_url('assets/img/favicon.ico')" />
+
+	<!-- Font Awesome icons (free version)-->
+	<script src="https://use.fontawesome.com/releases/v5.13.0/js/all.js" crossorigin="anonymous"></script>
+
+	<!-- Google fonts-->
+	<link href="https://fonts.googleapis.com/css?family=Varela+Round" rel="stylesheet" />
+	<link href="https://fonts.googleapis.com/css?family=Nunito:200,200i,300,300i,400,400i,600,600i,700,700i,800,800i,900,900i" rel="stylesheet" />
+
+	<link href="https://code.jquery.com/ui/1.12.1/themes/smoothness/jquery-ui.css" rel="stylesheet"/>
+
+	<!-- Core theme CSS (includes Bootstrap)-->
+	<link href="{{ static_url('css/styles.css') }}" rel="stylesheet" />
+
+	<style>
+		.int
+		{
+			//padding:10px;
+			font-size:4px;
+		}
+	</style>
+
+</head>
+
+<body> 
+	<header class="masthead">
+		<div class="container d-flex h-100 align-items-center">
+				<div class="mx-auto text-center">
+						<h1 class="mx-auto my-0 text-uppercase">MMT Extractor</h1>
+						<h2 class="text-white-50 mx-auto mt-2 mb-5">Access the MMT database as CSV files.</h2>
+							<form action="javascript:preSubmit()">
+								<div class="row">
+									<div class="col-8">
+										<div class="row">
+											<div class="col my-1">
+												<label class="mr-sm-2" for="system1" style="color:white">System</label>
+												<select class="custom-select mr-sm-2" id="system1">
+													<option selected>Choose...</option>
+													<option value="1">One</option>
+													<option value="2">Two</option>
+													<option value="3">Three</option>
+												</select>
+											</div>
+											<div class="col my-1">
+												<label class="mr-sm-2" for="log1" style="color:white">Log</label>
+												<select class="custom-select mr-sm-2" id="log1">
+												</select>
+											</div>
+								</div>
+										<div class="row">
+											<div class="col my-1">
+												<select class="custom-select mr-sm-2" id="system2">
+													<option selected>Choose...</option>
+													<option value="1">One</option>
+													<option value="2">Two</option>
+													<option value="3">Three</option>
+												</select>
+											</div>
+											<div class="col my-1">
+												<select class="custom-select mr-sm-2" id="log2">
+												</select>
+											</div>
+
+								</div>
+										<div class="row">
+											<div class="col my-1">
+												<select class="custom-select mr-sm-2" id="system3">
+													<option selected>Choose...</option>
+													<option value="1">One</option>
+													<option value="2">Two</option>
+													<option value="3">Three</option>
+												</select>
+											</div>
+											<div class="col my-1">
+												<select class="custom-select mr-sm-2" id="log3">
+												</select>
+											</div>
+								</div>
+										<div class="row">
+											<div class="col my-1">
+
+												<select class="custom-select mr-sm-2" id="system4">
+													<option selected>Choose...</option>
+													<option value="1">One</option>
+													<option value="2">Two</option>
+													<option value="3">Three</option>
+												</select>
+											</div>
+											<div class="col my-1">
+												<select class="custom-select mr-sm-2" id="log4">
+												</select>
+											</div>
+
+								</div>
+										<div class="row">
+											<div class="col my-1">
+
+												<select class="custom-select mr-sm-2" id="system5">
+													<option selected>Choose...</option>
+													<option value="1">One</option>
+													<option value="2">Two</option>
+													<option value="3">Three</option>
+												</select>
+											</div>
+											<div class="col my-1">
+												<select class="custom-select mr-sm-2" id="log5">
+												</select>
+											</div>
+
+								</div>
+										<div class="row my-1">
+												<button id="submit" type="submit" class="btn btn-primary">Submit</button>
+										</div>
+									</div>
+									<div class="col-1"></div>
+									<div class="col">
+										<div class="row">
+											<label for="startdate" style="color:white;margin-right:10rem">Start Date</label>
+											<div class="row">
+												<input type="text" name="startdate" id="startdate" onChange="showStats()"/>
+											</div>
+										</div>
+										<div class="row" style="min-height:20px"></div>
+										<div class="row">
+											<label for="enddate" style="color:white;margin-right:10rem">End Date</label>
+											<div class="row">
+												<input type="text" name="enddate" value="" id="enddate" onChange="showStats()"/>
+											</div>
+										</div>
+<!--										<div class="row">
+											<label for"slider11" style="color:white">Number of Samples</label>
+											<input id="slider11" value="1000" class="border-0" type="range" min="1000" max="100000" step="1000" />
+											<span id="sliderval" class="font-weight-bold text-primary ml-2 mt-1 valueSpan">1000</span>
+</div>-->
+
+										<div class="row" style="min-height:50px"></div>
+											<div class="row" style="max-height:20px">
+												<label style="color:white">Sample Interval</label>
+												<input id="sample_interval" type="number" value="1" min="1" max="1000" step="1" onChange="showStats()"/>
+													<div class="btn-group btn-group-toggle btn-group-sm" data-toggle="buttons">
+														<label class="btn btn-secondary int">
+															<input type="radio" name="interval" id="secs" autocomplete="off" checked> Seconds
+														</label>
+														<label class="btn btn-secondary int">
+															<input type="radio" name="interval" id="hours" autocomplete="off"> Hours
+														</label>
+														<label class="btn btn-secondary int">
+															<input type="radio" name="interval" id="days" autocomplete="off"> Days
+														</label>
+												</div>
+
+												<div><p id="stats" style="color:white; border:solid 1px white"></p></div>
+											</div>
+										</div>
+									</div>
+							</form>
+					 <!-- <a class="btn btn-primary js-scroll-trigger" href="#about">Get Started</a>-->
+				</div>
+		</div>
+
+
+		</header>
+
+		<!-- model message -->
+		<div id="error" class="modal" tabindex="-1" role="dialog">
+			<div class="modal-dialog" role="document">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h5 id="error_modal_title" class="modal-title">Submition Error</h5>
+						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+							<span aria-hidden="true">&times;</span>
+						</button>
+					</div>
+					<div class="modal-body">
+						<p id="error_modal_msg">Modal body text goes here.</p>
+					</div>
+					<div class="modal-footer">
+						<button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div id="beforesubmit" class="modal" tabindex="-1" role="dialog">
+			<div class="modal-dialog" role="document">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h5 id="presubmit_modal_title" class="modal-title">Modal title</h5>
+						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+							<span aria-hidden="true">&times;</span>
+						</button>
+					</div>
+					<div class="modal-body">
+						<p id="presubmit_modal_msg"></p>
+					</div>
+					<div class="modal-footer">
+						<button id="btn-submit" type="button" class="btn btn-secondary" data-dismiss="modal">Submit Job</button>
+						<button id="btn-cancel" type="button" class="btn btn-secondary" data-dismiss="modal">Cancel</button>
+					</div>
+				</div>
+			</div>
+
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+		<script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js" integrity="sha256-VazP97ZCwtekAsvgPBSUwPFKdrwD3unUfSGVYrahUqU=" crossorigin="anonymous"></script>
+		<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/js/bootstrap.bundle.min.js"></script>
+
+		<!-- Third party plugin JS-->
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-easing/1.4.1/jquery.easing.min.js"></script>
+
+		<!--Local scripts-->
+		<script src="{{ static_url('js/scripts.js') }}"></script>
+		<script src="{{ static_url('js/info.js') }}"></script>
+
+</body>
 </html>
 

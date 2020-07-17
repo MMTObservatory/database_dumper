@@ -23,8 +23,25 @@ config = AppConfig(configpath)
 from settings import settings
 from db_dumper.urls import url_patterns
 import logging
+import sys
 
-logging.basicConfig(level=logging.DEBUG)
+
+logmode = config["log"]['mode']
+
+if 'stdout' in config['log']:
+    logstdout = True
+else:
+    logstdout = False
+
+if logmode == "debug":
+    loglevel = logging.DEBUG
+else:
+    loglevel = logging.INFO
+
+logging.basicConfig(level=loglevel, filename=config["log"]["file"])
+
+if logstdout:
+    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
 class TornadoApplication(tornado.web.Application):
 

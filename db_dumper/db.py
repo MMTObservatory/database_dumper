@@ -13,7 +13,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from scipy import stats
 global_limit = int(AppConfig()["DEFAULT"]["resp_limit"])
-
+import sys
+import pickle
 
 class db_conn:
     instance = None
@@ -72,7 +73,6 @@ class db_conn:
                 sqlstr += f" where {where}"
 
             sqlstr += f" limit {global_limit}"
-            print(sqlstr)
             resp = await self.query(sqlstr)
 
             df = pd.DataFrame.from_records(resp, columns=columns)
@@ -80,11 +80,7 @@ class db_conn:
             return df
 
         async def long_select(self, table, start, stop):
-            """This function is meant to be called when the number of
-            records that will be retrieved by a select is greater than
-            some upper limit. In this case we call the select in a
-            loop and write the responses to a file allowing other
-            coroutines to advance during the IO blocking."""
+            """Use fetchmany to yeild the results in chunks.."""
 
             where = f"timestamp > {int(start.timestamp() * 1000)}\
              and timestamp < {int(stop.timestamp() * 1000)}"
@@ -173,25 +169,36 @@ class dumper_job:
     async def run(self):
         """Retrieve raw data from the database, downsample data into evenly
         spaced datapoints and merge the data into one csv_file"""
+        logging.debug(f"Beggining run for job {self.jobid}")
         tasks = []
         fpath = Path(self.config["DEFAULT"]["bigfile_path"]) / self.jobid
         fpath.mkdir(exist_ok=True, parents=True)
         fname = "processed.csv"
+
         # Set up the sql select queries
         for table in self.ds_names:
+            logging.debug(f"building select_iter tasks for {table}")
             select_iter = self.conn.long_select(table, self.start, self.stop)
             task = self.collect_and_write(table, select_iter)
             self.metadata['tables'][table]['finished'] = False
             tasks.append(task)
 
+
+        logging.debug(f"'Gathering' select_iter tasks (querying database and writing raw files)")
         # Get the raw data
         results = await asyncio.gather(*tasks)
-
-        # downsample the data
+        logging.debug("Finished select_iter tasks")
+        
+        logging.debug("Beginning down sampling")
+        # downsample the 
         dfs = [self.down_sample(result, table) for result, table in zip(results, self.ds_names)]
+        logging.debug("Finished down sampling")
+
         final_df = pd.concat(dfs, join='outer', axis=1)
+        logging.debug(final_df)
         final_df.columns = self.ds_names
 
+        
         self.metadata["processed_rows"] = len(final_df)
         self.metadata['processed_stats'] = final_df.describe()
         final_df.to_csv(fpath / fname)
@@ -202,25 +209,24 @@ class dumper_job:
         self.metadata["processed_file"] = fpath / fname
         self.metadata["processed_file_stats"] = (fpath / fname).stat()
         self.metadata["plot_file"] = (fpath / "plot.png")
+
+        logging.debug("Beginning plotting")
         try:
 
             plt.ioff()
-            print("attempting to plot")
             #tmpdf = final_df.dropna()
 
 
             ax = final_df.dropna().plot()
-            print("we got a plot")
             fig = ax.get_figure()
-            print("pulled figure")
             fig.savefig(self.metadata['plot_file'])
-            print("saved")
 
         except Exception as error:
-            print(f"print We caught the exception {error}")
+            logging.info(f"There was a plotting error: {error}")
 
         self.metadata["finished"] = True
 
+        logging.debug(f"Writing metafile {fpath/meta.json}")
         with (fpath/"meta.json").open('w') as fd:
             print(self.metadata)
             json.dump(self.metadata, fd, indent=2, default=str)
@@ -320,23 +326,42 @@ class dumper_job:
     def tables(self):
         return self.metadata['tables']
 
+
     def down_sample(self, csv_file, table):
         """Read csv_file in chunks using an evenly spaced sample time
         to downsample"""
+
+        logging.debug(f"{table} Chunking csv_file {csv_file}")
         chunks = pd.read_csv(csv_file, chunksize=10000)
         sample_times = self.sample_times
         out_df = pd.DataFrame()
 
         for ii, df in enumerate(chunks):
-            df.index = pd.to_datetime(df.timestamp * 1000000)  # Pandas dt is in nanoseconds
-            del df["timestamp"]
-            subsample = sample_times[sample_times < df.index.max()]
-            subsample = subsample[subsample > df.index.min()]
-            with_sample_times = pd.concat([df, pd.DataFrame([np.nan] * len(subsample), index=subsample)])
-            print(len)
-            newdf = with_sample_times.value.interpolate(method='time', order=self.fit_order)[subsample]
 
-            out_df = pd.concat([out_df, newdf])
+            try:
+                logging.debug(f"{ii}th chunk of {table} ({len(df)} rows).")
+                logging.debug(f"converting to datetime")
+                df.index = pd.to_datetime(df.timestamp * 1000000, utc=True)  # Pandas dt is in nanoseconds
+
+                logging.debug(f"{df.index.max()}")
+                del df["timestamp"]
+                subsample = sample_times[sample_times < df.index.max()]
+                subsample = subsample[subsample > df.index.min()]
+
+                with_sample_times = pd.concat([df, pd.DataFrame([np.nan] * len(subsample), index=subsample)])
+                logging.debug(f"Subsample times concatenated")
+                with_sample_times.to_pickle("wst.pkl")
+                df.to_pickle("df.pkl")
+                logging.debug(with_sample_times.dtypes)
+
+                newdf = with_sample_times.value.interpolate(method='time')[subsample]
+                
+                out_df = pd.concat([out_df, newdf])
+                logging.debug("New df updated looping...")
+
+            except Exception as error:
+
+                logging.info(f"down_sample error: {error}")
 
 
         return out_df

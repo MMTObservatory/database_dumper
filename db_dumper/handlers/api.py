@@ -78,7 +78,8 @@ class JsonHandler(RequestHandler):
             fit_order = 5
 
         job = dumper_job(good, nsamples, fit_order, start, stop)
-        job = dumper_job(good, nsamples, fit_order, start, stop)
+        #job = dumper_job(good, nsamples, fit_order, start, stop)
+
         self.jiface.submit_job(job)
         resp["info"] = job.state
         resp["success"] = True
@@ -144,7 +145,6 @@ class InfoHandler(RequestHandler):
     conn = db_conn()
 
     async def get(self, otype='.html'):
-        print(otype)
         df = await self.conn.info()
         if otype == '.html':
             self.write(df.to_html())
