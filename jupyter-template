@@ -24,7 +24,12 @@
     "df = pd.read_csv(\"http://ops2.mmto.arizona.edu:8000/data/{{ jobid }}/processed.csv\")\n",
     "df.index = pd.to_datetime(df.timestamp)\n",
     "del df['timestamp']\n",
-    "%matplotlib notebook\n"
+    "%matplotlib notebook\n", 
+	"\n",
+	"# The MPL epoch and pandas epoch have diverged\n", 
+	"# This puts them in line but will likely break one day soon.\n",
+	"import matplotlib.dates\n",
+	"matplotlib.dates.set_epoch('0000-12-31')"
    ]
   },
   {
