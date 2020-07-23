@@ -1,0 +1,24 @@
+#!/bin/bash
+
+# Bash script to run the docker-compose. 
+# The first argument is the path to the 
+# compose file the second is the compose
+# command.
+
+
+if [ -d "$1" ]
+then
+	cd $1;
+	export DB_DUMPER_UID=$(id -u)
+	export DB_DUMPER_GID=$(id -g)
+	docker-compose $2;
+else
+	echo "Bad path to compose file: $1"
+	echo "USAGE: $0 <path to compose file> <compose arg>";
+	echo "Like: $0 /home/sswindell/git-clones/database_dumper";
+fi
+
+cd $1 
+
+
+

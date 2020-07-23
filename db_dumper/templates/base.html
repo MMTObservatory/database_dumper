@@ -32,11 +32,52 @@
 </head>
 
 <body> 
+	{% include navbar.html%}
+<!--
+	<nav class="navbar navbar-expand-sm navbar-dark bg-dark sticky-top">
+  <a class="navbar-brand" href="#">MMT Extractor</a>
+  <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+    <span class="navbar-toggler-icon"></span>
+  </button>
+
+  <div class="collapse navbar-collapse" id="navbarSupportedContent">
+    <ul class="navbar-nav mr-auto">
+      <li class="nav-item active">
+        <a class="nav-link" href="#">Home <span class="sr-only">(current)</span></a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" href="/joblist.html">Finished Jobs</a>
+      </li> 
+			<li class="nav-item">
+        <a class="nav-link" href="/jupyter">Jupyter</a>
+      </li>
+      <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+          Dropdown
+        </a>
+        <div class="dropdown-menu" aria-labelledby="navbarDropdown">
+          <a class="dropdown-item" href="#">Action</a>
+          <a class="dropdown-item" href="#">Another action</a>
+          <div class="dropdown-divider"></div>
+          <a class="dropdown-item" href="#">Something else here</a>
+        </div>
+			</li>
+      <li class="nav-item">
+        <a class="nav-link disabled" href="#">Disabled</a>
+      </li>
+    </ul>
+		
+    <form class="form-inline my-2 my-lg-0">
+      <input class="form-control mr-sm-2" type="search" placeholder="Search" aria-label="Search">
+      <button class="btn btn-outline-success my-2 my-sm-0" type="submit">Search</button>
+		</form>-->
+  </div>
+	</nav>
 	<header class="masthead">
-		<div class="container d-flex h-100 align-items-center">
+		<div class="container d-flex h-75 align-items-center">
 				<div class="mx-auto text-center">
-						<h1 class="mx-auto my-0 text-uppercase">MMT Extractor</h1>
-						<h2 class="text-white-50 mx-auto mt-2 mb-5">Access the MMT database as CSV files.</h2>
+					<!--<h1 class="mx-auto my-0 text-uppercase">MMT Extractor</h1>-->
+						<h2 class="text-white mx-auto mt-2 mb-5">Access the MMT database as CSV files.</h2>
 							<form action="javascript:preSubmit()">
 								<div class="row">
 									<div class="col-8">
@@ -145,7 +186,7 @@
 										<div class="row" style="min-height:50px"></div>
 											<div class="row" style="max-height:20px">
 												<label style="color:white">Sample Interval</label>
-												<input id="sample_interval" type="number" value="1" min="1" max="1000" step="1" onChange="showStats()"/>
+												<input id="sample_interval" type="number" value="60" min="1" max="1000" step="1" onChange="showStats()"/>
 													<div class="btn-group btn-group-toggle btn-group-sm" data-toggle="buttons">
 														<label class="btn btn-secondary int">
 															<input type="radio" name="interval" id="secs" autocomplete="off" checked> Seconds

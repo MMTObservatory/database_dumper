@@ -2,6 +2,47 @@ version: '3.3'
 services:
   db_dumper:
     build: .
-    command: python /app/run.py
+    command: ["python", "/db_dumper/run.py"]
     ports:
-      - "8000:8000"
+      - "8001:3000"
+    environment:
+      - "DB_DUMPER_CONFIG=/config/config.ini"
+      - "USER_ID=${DB_DUMPER_UID}"
+      - "GROUP_ID=${DB_DUMPER_GID}"
+    volumes:
+      - ./tmp:/tmp 
+      - ./user_data:/user_data 
+      - ./config:/config
+      - ./:/db_dumper
+      - ./notebooks:/notebooks
+
+      
+
+  jupyter:
+    image: "db_dumper-jupyter"
+    build: 
+      context: .
+      args:
+        - "USER_ID=${DB_DUMPER_UID}"
+        - "GROUP_ID=${DB_DUMPER_GID}"
+    volumes: 
+      - ./notebooks:/home/dbuser/notebooks
+      - ./tmp:/home/dbuser/tmp 
+      - ./user_data:/home/dbuser/user_data 
+      - ./config:/config
+      - .:/home/dbuser/db_dumper
+
+    environment:
+      - DB_DUMPER_CONFIG=/config/config-jupyter.ini
+    command:
+      /build/run_jupyter.sh
+
+
+  webserver:
+    image: db_dumper-webserver
+    build:
+      context: .
+      dockerfile: Dockerfile-webserver
+    ports:
+      - "8000:80"
+  

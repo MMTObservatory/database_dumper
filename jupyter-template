@@ -1,0 +1,86 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Welcome To Jupyter \n",
+    "## To begin click Cells->Run All  in the menu above\n",
+    " This page will allow you to do analysis on data retrieved from the extractor. Each cell is a small python script that you can run by clicking the arrow on the left side. The first cell below will retrieve your data from the extractor and store it in a pandas DataFrame called df. You can see all the ways you can analyze data in a DataFrame with [this tutorial](https://www.tutorialspoint.com/python_pandas/python_pandas_dataframe.htm). \n",
+    " \n",
+    " Other cells in this notebook provide some statistics and a plot of the data. \n",
+    " \n",
+    " [Return to the extractor](/)",
+	" [Return to the job home](/job/data.html?jobid={{ jobid }})"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import pandas as pd\n",
+    "df = pd.read_csv(\"http://ops2.mmto.arizona.edu:8000/data/{{ jobid }}/processed.csv\")\n",
+    "df.index = pd.to_datetime(df.timestamp)\n",
+    "del df['timestamp']\n",
+    "%matplotlib notebook\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df.describe()\n"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df.plot(grid=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": null,
+   "metadata": {},
+   "outputs": [],
+   "source": []
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.8.3"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 4
+}

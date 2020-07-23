@@ -13,7 +13,9 @@ from dateutil import parser
 from pathlib import Path
 config = AppConfig()
 from collections import OrderedDict
-
+import logging
+import pytz
+import os
 
 class JsonHandler(RequestHandler):
     """This handler accepts a json string with the following keywords:
@@ -50,13 +52,13 @@ class JsonHandler(RequestHandler):
                 resp["errors"].append(f"Bad ds_name {name}")
 
         try:
-            start = parser.parse(params["startdate"])
+            start = pd.to_datetime(params["startdate"])
         except Exception as err:
             resp["errors"].append(str(err))
             start=None
 
         try:
-            stop = parser.parse(params["enddate"])
+            stop = pd.to_datetime(params["enddate"])
         except Exception as err:
             resp["errors"].append(str(err))
             stop = None
@@ -92,6 +94,7 @@ class TestHandler(RequestHandler):
     def get(self, *args):
 
         self.write(f"This is a test {args[0]} {args[1]}")
+        self.write(str(os.environ))
 
 class JobHandler(RequestHandler):
 
@@ -161,7 +164,8 @@ class System2LogHandler(RequestHandler):
         except Exception as error:
             self.write({"error": "Could not connect to database"})
             return
-        systems = set(df['subsystem'])
+        systems = list(set(df['subsystem']))
+        systems = sorted(systems)
         output = OrderedDict()
 
         for sys in systems:
@@ -169,7 +173,46 @@ class System2LogHandler(RequestHandler):
 
         self.write(output)
 
+class TaskHandler(RequestHandler):
+    jiface = job_interface()
+    def get(self):
+        tasks = self.jiface.active_tasks()
+        self.render("tasklist.html", tasks=tasks)
 
+class NotebookHandler(RequestHandler):
+    jiface = job_interface()
+    def get(self):
+        uid = int(os.environ['USER_ID'])
+        gid = int(os.environ['GROUP_ID'])
+        jobid = self.get_argument("jobid")
+        job = self.jiface[jobid]
+        notebook_name = f"{job.state['description']}_{jobid[:4]}"
+        for possible in Path("/notebooks/").iterdir():
+            if possible.stem == notebook_name:
+                self.redirect(f"/jupyter/notebooks/{notebook_name}.ipynb")
+                return
+
+        
+        with open("jupyter-template") as fd:
+            template = fd.read()
+
+        outfile = Path(f"/notebooks/{notebook_name}.ipynb")
+        template=self.render_string("/db_dumper/jupyter-template", jobid=jobid)
+        try:
+            logging.debug(f"Writing file {outfile}")
+            with outfile.open('w') as fd:
+                fd.write(template.decode())
+            logging.debug(f"Setting notbook onwnership: gid is {gid} uid is {uid}")
+            os.chown(str(outfile), uid, gid )
+
+        except Exception as error:
+            logging.warning(f"Could not write jupyter template: {error}")
+            self.write(f"{error}")
+            self.write(str(outfile))
+            self.finish()
+
+
+        self.redirect(f"/jupyter/notebooks/{notebook_name}.ipynb")
 
 def make_app():
     urls = [("/recent/json", JsonHandler),

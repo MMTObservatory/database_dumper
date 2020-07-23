@@ -49,6 +49,8 @@ class TornadoApplication(tornado.web.Application):
         tornado.web.Application.__init__(self, url_patterns, **settings)
 
 
+logging.debug(f"configpath is {configpath}")
+
 def main():
 
     app = TornadoApplication()

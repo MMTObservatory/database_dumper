@@ -1,0 +1,31 @@
+FROM python:3.8-buster
+
+LABEL maintainer="Scott Swindell <sswindell@mmto.org>"
+
+ARG USER_ID
+ARG GROUP_ID
+
+RUN groupadd -f -g ${GROUP_ID} dbuser && \ 
+	useradd -rm -d /home/dbuser -u ${USER_ID} -g ${GROUP_ID} dbuser && \
+	mkdir /home/dbuser/notebooks && chown -R dbuser:dbuser /home/dbuser/notebooks && \
+	mkdir /home/dbuser/user_data && chown -R dbuser:dbuser /home/dbuser/user_data && \
+	mkdir /home/dbuser/tmp && chown -R dbuser:dbuser /home/dbuser/tmp 
+
+
+WORKDIR /home/dbuser
+
+
+copy . /build
+
+RUN apt update \
+    && apt install -y automake gcc g++ python3-dev libffi-dev \
+    && pip install wheel \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /var/cache/apk/* \
+	&& cd /build && pip install -r requirements.txt 
+	# python setup.py install
+
+
+USER dbuser
+
+CMD /db_dumper/run_jupyter.sh

@@ -92,11 +92,12 @@ class db_conn:
             n_resp = global_limit
 
             cursor = await self.query(sqlstr, return_type="cursor")
-
             while n_resp >= global_limit:
                 records = await cursor.fetchmany(global_limit)
                 n_resp = len(records)
                 yield records
+
+            
 
         async def query(self, sql: str, return_type: str = "records"):
 
@@ -129,6 +130,7 @@ class db_conn:
         return setattr(self.instance, key, value)
 
 
+
 class dumper_job:
 
     conn = db_conn()
@@ -157,20 +159,23 @@ class dumper_job:
 
         self.metadata = {"job_start_utc": datetime.datetime.utcnow(),
                          'tables': {},
-                         'finished': False
-
+                         'finished': False,
+                         'exceptions': [],
+                         'fatal_exception': ''
                          }
 
         for table in self.ds_names:
             self.metadata['tables'][table] = {}
             self.metadata['tables'][table]['tmpfile'] = None
             self.metadata['tables'][table]['rows_written'] = 0
+            self.metadata['tables'][table]['exceptions'] = []
+            self.metadata['tables'][table]['fatal_exception'] = ''
 
     async def run(self):
         """Retrieve raw data from the database, downsample data into evenly
         spaced datapoints and merge the data into one csv_file"""
         logging.debug(f"Beggining run for job {self.jobid}")
-        tasks = []
+        tasks = {}
         fpath = Path(self.config["DEFAULT"]["bigfile_path"]) / self.jobid
         fpath.mkdir(exist_ok=True, parents=True)
         fname = "processed.csv"
@@ -179,59 +184,95 @@ class dumper_job:
         for table in self.ds_names:
             logging.debug(f"building select_iter tasks for {table}")
             select_iter = self.conn.long_select(table, self.start, self.stop)
+            
+            # Create each task but only allow them to run for 5 mins
             task = self.collect_and_write(table, select_iter)
             self.metadata['tables'][table]['finished'] = False
-            tasks.append(task)
+            tasks[table] = task
 
 
         logging.debug(f"'Gathering' select_iter tasks (querying database and writing raw files)")
         # Get the raw data
-        results = await asyncio.gather(*tasks)
+        try:
+            results = await asyncio.gather(*list(tasks.values()))
+        except Exception as error:
+            logging.warning(f"select_iter failed {error}")
+            self.metadata['exceptions'].append(f"select_iter failed {error}")
+            self.metadata['fatal_exception'].append("All tables gave exceptions")
+            self.fatal_exception()
+            return 
+
+        
         logging.debug("Finished select_iter tasks")
         
-        logging.debug("Beginning down sampling")
-        # downsample the 
-        dfs = [self.down_sample(result, table) for result, table in zip(results, self.ds_names)]
-        logging.debug("Finished down sampling")
+        logging.debug("Begin down sampling")
 
-        final_df = pd.concat(dfs, join='outer', axis=1)
-        logging.debug(final_df)
-        final_df.columns = self.ds_names
+        # downsample the data
+        try:
+            dfs = []
+            for result, table in zip(results, self.ds_names):
+                dfs.append( await self.down_sample(result, table) )
+        
+
+            final_df = pd.concat(dfs, join='outer', axis=1)
+            logging.debug(final_df)
+            final_df.columns = self.ds_names
+            final_df.index.name = "timestamp"
+
+            
+            self.metadata["processed_rows"] = len(final_df)
+            self.metadata['processed_stats'] = final_df.describe()
+            final_df.to_csv(fpath / fname)
+
+
+            self.metadata["processed_file"] = fpath / fname
+            self.metadata["processed_file_stats"] = (fpath / fname).stat()
+            self.metadata["plot_file"] = (fpath / "plot.png")
+
+        except Exception as error:
+
+            logging.debug(f"finald_df processing failed: {error}")
+            self.metadata['exceptions'].append(f"processing error {error}" )
+            self.metadata['fatal_exceptions'] = {f"processing error {error}"}
+            self.fatal_exception()
+            return
+
 
         
-        self.metadata["processed_rows"] = len(final_df)
-        self.metadata['processed_stats'] = final_df.describe()
-        final_df.to_csv(fpath / fname)
-
-
-
-
-        self.metadata["processed_file"] = fpath / fname
-        self.metadata["processed_file_stats"] = (fpath / fname).stat()
-        self.metadata["plot_file"] = (fpath / "plot.png")
-
-        logging.debug("Beginning plotting")
+        logging.debug("Begin plotting")
         try:
+            if len(dfs) > 1e6: raise Exception("Too much data to plot.")
 
             plt.ioff()
             #tmpdf = final_df.dropna()
 
-
+            ticks=len(final_df.index)//10
             ax = final_df.dropna().plot()
+            ax.set_xticklabels([t.ctime() for t in final_df.index[::ticks]], rotation=20, ha='right')
+            ax.set_xticks([t for t in final_df.index[::ticks]])
             fig = ax.get_figure()
             fig.savefig(self.metadata['plot_file'])
 
         except Exception as error:
             logging.info(f"There was a plotting error: {error}")
+            self.metadata['exceptions'].append(f"plotting error {error}")
 
+
+        if len(final_df) == 0:
+            self.metadata['exceptions'].append("No data from available")
         self.metadata["finished"] = True
 
-        logging.debug(f"Writing metafile {fpath/meta.json}")
+        logging.debug(f"Writing metafile {fpath/'meta.json'}")
         with (fpath/"meta.json").open('w') as fd:
             print(self.metadata)
             json.dump(self.metadata, fd, indent=2, default=str)
 
-        del final_df
+        self._final_df = final_df
+
+    def fatal_exception(self, error):
+        fpath = Path(self.config["DEFAULT"]["bigfile_path"]) / self.jobid
+        with (fpath/"meta.json").open('w') as fd:
+           self.json.dump(self.metadata, fd, indent=2, default=str)
 
 
 
@@ -247,6 +288,9 @@ class dumper_job:
         return self._final_df
 
     async def collect_and_write(self, table, select_iter):
+        """Grab the requested records from the database in 
+        chunks. Write each chunk to a csv file using 
+        pd.DataFrame.to_csv."""
 
         fpath = Path(self.config["DEFAULT"]["bigfile_tmp_path"]) / self.jobid
         fpath.mkdir(parents=True, exist_ok=True)
@@ -283,7 +327,7 @@ class dumper_job:
     def description(self):
         outstr = ""
         for ii, tstring in enumerate(self.ds_names):
-            sep = ' | '
+            sep = '&'
             if ii == len(self.ds_names)-1:
                 sep = ''
 
@@ -299,8 +343,6 @@ class dumper_job:
     def __getitem__(self, item):
         return self.metadata[item]
 
-    def __getattr__(self, attr):
-        return self.metadata[attr]
 
     @property
     def json(self):
@@ -320,23 +362,35 @@ class dumper_job:
 
     @property
     def sample_times(self):
-        return pd.date_range(self.start, self.stop, periods=self.nsamples)
+        logging.debug(f"Generating sample_times with {self.start}, {self.stop} and {self.nsamples} periods at utc")
+        return pd.date_range(self.start, self.stop, periods=self.nsamples, tz='utc')
 
     @property
     def tables(self):
         return self.metadata['tables']
 
 
-    def down_sample(self, csv_file, table):
+    async def down_sample(self, csv_file, table):
         """Read csv_file in chunks using an evenly spaced sample time
         to downsample"""
 
-        logging.debug(f"{table} Chunking csv_file {csv_file}")
-        chunks = pd.read_csv(csv_file, chunksize=10000)
-        sample_times = self.sample_times
-        out_df = pd.DataFrame()
+        try:
+            logging.debug(f"{table} Chunking csv_file {csv_file}")
+            chunks = pd.read_csv(csv_file, chunksize=10000)
+            sample_times = self.sample_times
+            out_df = pd.DataFrame()
 
+        except Exception as error:
+            logging.debug(f"Chunking or sample time error: {error}")
+
+        
+        
         for ii, df in enumerate(chunks):
+
+            # Give other tasks time to do something during this 
+            # CPU intnesive task. We should probably run this as
+            # a separate thread or process. 
+            await asyncio.sleep(0.1)
 
             try:
                 logging.debug(f"{ii}th chunk of {table} ({len(df)} rows).")
@@ -447,6 +501,10 @@ class job_interface:
                     yield str(data.name), meta
 
 
+        def active_tasks(self):
+           return self._tasks
+
+
     instance = None
 
     def __new__(cls):
@@ -455,3 +513,5 @@ class job_interface:
             cls.instance = cls._job_interface()
 
         return cls.instance
+
+
