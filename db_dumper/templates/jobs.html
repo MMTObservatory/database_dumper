@@ -14,7 +14,8 @@
     <title>Job Status</title>
 
   </head>
-  <body style="padding:20px; font-family:Libre-Baskerville; background:black; color:white;">
+  <body style="font-family:Libre-Baskerville; background:black; color:white;">
+	{% include "navbar.html" %}
     <h1 style="margin-bottom:20px">Job: {{ job["description"] }} </h1>
 
       <div class="row">
@@ -25,11 +26,17 @@
     {% if job["finished"] %}
     <div class="row">
       <div class="col-4">
-        <h1><a href="/data/{{ jobid }}/processed.csv">CSV File</a></h1>
-        <h1><a href="/job/data.json?jobid={{ jobid }}">Meta Data (JSON)</a></h1>
+        <h1><a href="/data/{{ jobid }}/processed.csv">
+		<img src="https://img.icons8.com/officel/16/000000/download.png"/>
+						Download as CSV File
+				</a></h1>
+		<h1>
+				<img height="30px" width="30px" src="{{ static_url('assets/img/jupyter.ico') }}"/>
+				<a href="/build-notebook?jobid={{ jobid }}"> Open In Jupyter notebook </a></h1>
+        <h5 style="padding-top:50px"><a href="/job/data.json?jobid={{ jobid }}">Debug Info</a></h5>
 
         {% for tname, table in job['tables'].items() %}
-        <a href="/tmp/{{ jobid }}/{{ table['tmpfile'].split('\\')[-1] }}">
+        <a href="/tmp/{{ jobid }}/{{ table['tmpfile'].split('\\')[-1] }}" style="display:none;">
           {{ table['tmpfile'].split('\\')[-1] }}
         </a>
         {% end %}
@@ -47,6 +54,15 @@
       <div class="spinner-border" role="status">
             <span class="sr-only">Loading...</span>
       </div>
+        {% for tname, table in job['tables'].items() %}
+			<h2>{{ tname }}</h2>
+			<div><span>Rows Written:</span><span>{{ table['rows_written'] }}</span></div>
+			<div><span>Errors:</span><span>{{ table['exceptions'] }}</span></div>
+			<div><span>Finished:</span><span>{{ table['finished'] }}</span></div>
+
+		{% end %}
+
+			<div><span>Other Errors:</span><span>{{ job['exceptions'] }}</span></div>
     {% end %}
     <!-- Optional JavaScript -->
     <!-- jQuery first, then Popper.js, then Bootstrap JS -->
