@@ -217,12 +217,15 @@ class dumper_job:
             final_df = pd.concat(dfs, join='outer', axis=1)
             logging.debug(final_df)
             final_df.columns = self.ds_names
+            final_df.index = final_df.index.tz_convert("America/Phoenix")
             final_df.index.name = "timestamp"
 
             
             self.metadata["processed_rows"] = len(final_df)
             self.metadata['processed_stats'] = final_df.describe()
             final_df.to_csv(fpath / fname)
+            final_df.index = final_df.index.tz_localize(None)
+            final_df.to_excel(fpath / "processed.xlsx")
 
 
             self.metadata["processed_file"] = fpath / fname
